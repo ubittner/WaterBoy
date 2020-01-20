@@ -1,0 +1,12 @@
+{
+    "id": "{271B17F5-54C2-8940-8A2B-6E0762DAD94C}",
+    "author": "Ulrich Bittner",
+    "name": "WaterBoy",
+    "url": "https://github.com/ubittner/WaterBoy",
+    "compatibility": {
+        "version": "5.2"
+    },
+    "version": "1.0",
+    "build": 1,
+    "date": 1579539600
+}

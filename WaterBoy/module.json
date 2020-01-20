@@ -1,0 +1,14 @@
+{
+  "id": "{A15A568A-E75E-6338-F0F9-6284EDE28B01}",
+  "name": "WaterBoy",
+  "type": 3,
+  "vendor": "NTUB",
+  "aliases": [
+    "WaterBoy"
+  ],
+  "url": "https://github.com/ubittner/WaterBoy",
+  "parentRequirements": [],
+  "childRequirements": [],
+  "implemented": [],
+  "prefix": "WBOY"
+}
