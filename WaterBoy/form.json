@@ -57,12 +57,27 @@
         {
           "type": "CheckBox",
           "name": "EnableSolenoidValve",
-          "caption": "Magnetventil"
+          "caption": "Magnetventil (Zu / Auf)"
+        },
+        {
+          "type": "CheckBox",
+          "name": "EnableEmergencyStop",
+          "caption": "Not-Aus"
         },
         {
           "type": "CheckBox",
           "name": "EnableCycleTime",
           "caption": "Durchlaufzeit"
+        },
+        {
+          "type": "CheckBox",
+          "name": "EnableValveState",
+          "caption": "Ventil-Status"
+        },
+        {
+          "type": "CheckBox",
+          "name": "EnableTimerInfo",
+          "caption": "Timer"
         }
       ]
     },
@@ -72,16 +87,7 @@
       "items": [
         {
           "type": "Label",
-          "caption": "Bitte wählen Sie aus, ob der Wartungsmodus verwendet werden soll:"
-        },
-        {
-          "type": "CheckBox",
-          "name": "MaintenanceMode",
-          "caption": "Wartungsmodus verwenden"
-        },
-        {
-          "type": "Label",
-          "caption": "\nBitte fügen Sie das Magentventil (Variable) hinzu:"
+          "caption": "Bitte fügen Sie das Magentventil (Variable) hinzu:"
         },
         {
           "type": "SelectVariable",
@@ -89,9 +95,65 @@
           "caption": "Magnetventil"
         }
       ]
+    },
+    {
+      "type": "ExpansionPanel",
+      "caption": "Durchlaufzeit",
+      "items": [
+        {
+          "type": "Label",
+          "caption": "Bitte legen Sie den Minimalwert in Sekunden fest:"
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "MinValue",
+          "caption": "Minimalwert",
+          "suffix": "s"
+        },
+        {
+          "type": "Label",
+          "caption": "\nBitte legen Sie den Maximalwert in Sekunden fest:"
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "MaxValue",
+          "caption": "Maximalwert",
+          "suffix": "s"
+        },
+        {
+          "type": "Label",
+          "caption": "\nBitte legen Sie die Nachkommastellen fest:"
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "Digits",
+          "caption": "Nachmommastellen"
+        },
+        {
+          "type": "Label",
+          "caption": "\nBitte legen Sie die Schrittweite fest:"
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "StepSize",
+          "caption": "Schrittweite",
+          "digits": 1
+        }
+      ]
     }
   ],
   "actions": [
+    {
+      "type": "ExpansionPanel",
+      "caption": "Registrierte Nachrichten",
+      "items": [
+        {
+          "type": "Button",
+          "caption": "Registrierte Nachrichten anzeigen",
+          "onClick": "WBOY_ShowRegisteredMessages($id);"
+        }
+      ]
+    },
     {
       "type": "ExpansionPanel",
       "caption": "Testbereich",

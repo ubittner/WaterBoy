@@ -34,7 +34,7 @@ include_once __DIR__ . '/helper/autoload.php';
 class WaterBoy extends IPSModule
 {
     // Helper
-    use WBOY_waterControl;
+    use WBOY_valveControl;
 
     public function Create()
     {
@@ -70,8 +70,14 @@ class WaterBoy extends IPSModule
         // Set options
         $this->SetOptions();
 
+        // Register messages
+        $this->RegisterMessages();
+
         // Validate configuration
         $this->ValidateConfiguration();
+
+        // Check valve state
+        $this->CheckSolenoidValveState();
     }
 
     public function MessageSink($TimeStamp, $SenderID, $Message, $Data)
@@ -81,6 +87,16 @@ class WaterBoy extends IPSModule
         switch ($Message) {
             case IPS_KERNELSTARTED:
                 $this->KernelReady();
+                break;
+
+            case VM_UPDATE:
+                // Solenoid valve
+                if ($SenderID == $this->ReadPropertyInteger('SolenoidValve')) {
+                    if ($Data[1]) {
+                        $this->SendDebug(__FUNCTION__, 'Status hat sich geändert: ' . json_encode($Data[0]), 0);
+                        $this->SetValue('ValveState', (int) $Data[0]);
+                    }
+                }
                 break;
 
         }
@@ -100,6 +116,31 @@ class WaterBoy extends IPSModule
         $this->DeleteProfiles();
     }
 
+    public function ShowRegisteredMessages(): void
+    {
+        $kernelMessages = [];
+        $variableMessages = [];
+        foreach ($this->GetMessageList() as $id => $registeredMessage) {
+            foreach ($registeredMessage as $messageType) {
+                if ($messageType == IPS_KERNELSTARTED) {
+                    $kernelMessages[] = ['id' => $id];
+                }
+                if ($messageType == VM_UPDATE) {
+                    $variableMessages[] = ['id' => $id, 'name' => IPS_GetName($id)];
+                }
+            }
+        }
+        echo "IPS_KERNELSTARTED:\n\n";
+        foreach ($kernelMessages as $kernelMessage) {
+            echo $kernelMessage['id'] . "\n\n";
+        }
+        echo "\n\nVM_UPDATE:\n\n";
+        foreach ($variableMessages as $variableMessage) {
+            echo $variableMessage['id'] . "\n";
+            echo $variableMessage['name'] . "\n";
+        }
+    }
+
     //#################### Request Action
 
     public function RequestAction($Ident, $Value)
@@ -107,6 +148,15 @@ class WaterBoy extends IPSModule
         switch ($Ident) {
             case 'SolenoidValve':
                 $this->ToggleSolenoidValve($Value);
+                break;
+
+            case 'EmergencyStop':
+                $this->SetValue('EmergencyStop', true);
+                $close = $this->CloseSolenoidValve();
+                if ($close) {
+                    IPS_Sleep(500);
+                    $this->SetValue('EmergencyStop', false);
+                }
                 break;
 
             case 'CycleTime':
@@ -122,11 +172,19 @@ class WaterBoy extends IPSModule
     {
         // Visibility
         $this->RegisterPropertyBoolean('EnableSolenoidValve', true);
+        $this->RegisterPropertyBoolean('EnableEmergencyStop', true);
         $this->RegisterPropertyBoolean('EnableCycleTime', true);
+        $this->RegisterPropertyBoolean('EnableValveState', true);
+        $this->RegisterPropertyBoolean('EnableTimerInfo', true);
 
         // Valve
-        $this->RegisterPropertyBoolean('MaintenanceMode', false);
         $this->RegisterPropertyInteger('SolenoidValve', 0);
+
+        // Cycle time
+        $this->RegisterPropertyInteger('MinValue', 1);
+        $this->RegisterPropertyInteger('MaxValue', 60);
+        $this->RegisterPropertyInteger('Digits', 1);
+        $this->RegisterPropertyFloat('StepSize', 0.5);
     }
 
     private function CreateProfiles(): void
@@ -136,23 +194,32 @@ class WaterBoy extends IPSModule
         if (!IPS_VariableProfileExists($profile)) {
             IPS_CreateVariableProfile($profile, 0);
         }
-        IPS_SetVariableProfileAssociation($profile, 0, 'Zu', 'Execute', -1);
-        IPS_SetVariableProfileAssociation($profile, 1, 'Auf', 'Tap', 0x00FF00);
+        IPS_SetVariableProfileAssociation($profile, 0, 'Zu', 'Execute', 0x00FF00);
+        IPS_SetVariableProfileAssociation($profile, 1, 'Auf', 'Tap', 0x0000FF);
+
+        // Emergency stop
+        $profile = 'WBOY.' . $this->InstanceID . '.EmergencyStop';
+        if (!IPS_VariableProfileExists($profile)) {
+            IPS_CreateVariableProfile($profile, 0);
+        }
+        IPS_SetVariableProfileAssociation($profile, 0, 'Aus', 'Warning', -1);
+        IPS_SetVariableProfileAssociation($profile, 1, 'Not-Aus', 'Warning', 0xFF0000);
 
         // Cycle time
-        $profile = 'WBOY.' . $this->InstanceID . '.CycleTime';
+        $this->CreateCycleTimeProfile();
+
+        // Valve state
+        $profile = 'WBOY.' . $this->InstanceID . '.ValveState';
         if (!IPS_VariableProfileExists($profile)) {
             IPS_CreateVariableProfile($profile, 1);
         }
-        IPS_SetVariableProfileIcon($profile, 'Clock');
-        IPS_SetVariableProfileValues($profile, 1, 60, 1);
-        IPS_SetVariableProfileDigits($profile, 1);
-        IPS_SetVariableProfileText($profile, '', ' s');
+        IPS_SetVariableProfileAssociation($profile, 0, 'Zu', 'Information', 0x00FF00);
+        IPS_SetVariableProfileAssociation($profile, 1, 'Auf', 'Information', 0x0000FF);
     }
 
     private function DeleteProfiles(): void
     {
-        $profiles = ['SolenoidValve', 'CycleTime'];
+        $profiles = ['SolenoidValve', 'EmergencyStop', 'CycleTime', 'ValveState'];
         if (!empty($profiles)) {
             foreach ($profiles as $profile) {
                 $profileName = 'WBOY.' . $this->InstanceID . '.' . $profile;
@@ -170,10 +237,24 @@ class WaterBoy extends IPSModule
         $this->RegisterVariableBoolean('SolenoidValve', 'Magnetventil', $profile, 1);
         $this->EnableAction('SolenoidValve');
 
+        // Emergency stop
+        $profile = 'WBOY.' . $this->InstanceID . '.EmergencyStop';
+        $this->RegisterVariableBoolean('EmergencyStop', 'Not-Aus', $profile, 2);
+        $this->EnableAction('EmergencyStop');
+
         // Cycle time
         $profile = 'WBOY.' . $this->InstanceID . '.CycleTime';
-        $this->RegisterVariableInteger('CycleTime', 'Durchlaufzeit', $profile, 2);
+        $this->RegisterVariableFloat('CycleTime', 'Durchlaufzeit', $profile, 3);
         $this->EnableAction('CycleTime');
+
+        // Valve state
+        $profile = 'WBOY.' . $this->InstanceID . '.ValveState';
+        $this->RegisterVariableInteger('ValveState', 'Ventil-Status', $profile, 4);
+
+        // Timer info
+        $this->RegisterVariableString('TimerInfo', 'Timer', '', 5);
+        $id = $this->GetIDForIdent('TimerInfo');
+        IPS_SetIcon($id, 'Clock');
     }
 
     private function SetOptions(): void
@@ -183,9 +264,25 @@ class WaterBoy extends IPSModule
         $use = $this->ReadPropertyBoolean('EnableSolenoidValve');
         IPS_SetHidden($id, !$use);
 
+        // Emergency stop
+        $id = $this->GetIDForIdent('EmergencyStop');
+        $use = $this->ReadPropertyBoolean('EnableEmergencyStop');
+        IPS_SetHidden($id, !$use);
+
         // Cycle time
         $id = $this->GetIDForIdent('CycleTime');
         $use = $this->ReadPropertyBoolean('EnableCycleTime');
+        IPS_SetHidden($id, !$use);
+        $this->CreateCycleTimeProfile();
+
+        // Valve state
+        $id = $this->GetIDForIdent('ValveState');
+        $use = $this->ReadPropertyBoolean('EnableValveState');
+        IPS_SetHidden($id, !$use);
+
+        // Timer info
+        $id = $this->GetIDForIdent('TimerInfo');
+        $use = $this->ReadPropertyBoolean('EnableTimerInfo');
         IPS_SetHidden($id, !$use);
     }
 
@@ -197,6 +294,7 @@ class WaterBoy extends IPSModule
     private function DisableTimers(): void
     {
         $this->SetTimerInterval('CloseSolenoidValve', 0);
+        $this->SetValue('TimerInfo', '-');
     }
 
     private function ValidateConfiguration(): void
@@ -208,6 +306,41 @@ class WaterBoy extends IPSModule
         $this->SetStatus($status);
         if ($status == 102) {
             $this->CloseSolenoidValve();
+        }
+    }
+
+    private function CreateCycleTimeProfile(): void
+    {
+        $profile = 'WBOY.' . $this->InstanceID . '.CycleTime';
+        if (!IPS_VariableProfileExists($profile)) {
+            IPS_CreateVariableProfile($profile, 2);
+        }
+        IPS_SetVariableProfileIcon($profile, 'Clock');
+        IPS_SetVariableProfileValues($profile, $this->ReadPropertyInteger('MinValue'), $this->ReadPropertyInteger('MaxValue'), $this->ReadPropertyFloat('StepSize'));
+        IPS_SetVariableProfileDigits($profile, $this->ReadPropertyInteger('Digits'));
+        IPS_SetVariableProfileText($profile, '', ' s');
+    }
+
+    private function UnregisterMessages(): void
+    {
+        foreach ($this->GetMessageList() as $id => $registeredMessage) {
+            foreach ($registeredMessage as $messageType) {
+                if ($messageType == VM_UPDATE) {
+                    $this->UnregisterMessage($id, VM_UPDATE);
+                }
+            }
+        }
+    }
+
+    private function RegisterMessages(): void
+    {
+        // Unregister first
+        $this->UnregisterMessages();
+
+        // Solenoid valve
+        $id = $this->ReadPropertyInteger('SolenoidValve');
+        if ($id != 0 && IPS_ObjectExists($id)) {
+            $this->RegisterMessage($id, VM_UPDATE);
         }
     }
 }

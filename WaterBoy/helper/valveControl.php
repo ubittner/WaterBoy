@@ -3,7 +3,7 @@
 // Declare
 declare(strict_types=1);
 
-trait WBOY_waterControl
+trait WBOY_valveControl
 {
     /**
      * Toggles the solenoid valve.
@@ -31,9 +31,9 @@ trait WBOY_waterControl
 
     /**
      * Set the cycle time.
-     * @param int $Time
+     * @param float $Time
      */
-    public function SetCycleTime(int $Time): void
+    public function SetCycleTime(float $Time): void
     {
         $this->SetValue('CycleTime', $Time);
     }
@@ -48,15 +48,11 @@ trait WBOY_waterControl
     public function OpenSolenoidValve(): bool
     {
         $this->SendDebug(__FUNCTION__, 'Das Magnetventil wird geöffnet.', 0);
-        // Check maintenance mode
-        if ($this->ReadPropertyBoolean('MaintenanceMode')) {
-            $text = 'Abbruch, Wartungsmodus ist aktiviert!';
-            $this->LogMessage(__FUNCTION__ . ', ' . $text, KL_ERROR);
-            $this->SendDebug(__FUNCTION__, $text, 0);
-            return false;
-        }
         // Set timer
-        $this->SetTimerInterval('CloseSolenoidValve', $this->GetValue('CycleTime') * 1000);
+        $duration = $this->GetValue('CycleTime');
+        $this->SetTimerInterval('CloseSolenoidValve', $duration * 1000);
+        $timestamp = time() + (int) (round($duration, 0));
+        $this->SetValue('TimerInfo', date('d.m.Y, H:i:s', ($timestamp)));
         // Open valve
         if (!$this->CheckSolenoidValve()) {
             return false;
@@ -133,5 +129,19 @@ trait WBOY_waterControl
             $exists = false;
         }
         return $exists;
+    }
+
+    /**
+     * Checks the solenoid valve state
+     */
+    private function CheckSolenoidValveState(): void
+    {
+        if (!$this->CheckSolenoidValve()) {
+            return;
+        }
+        $id = $this->ReadPropertyInteger('SolenoidValve');
+        $state = GetValue($id);
+        $this->SetValue('SolenoidValve', $state);
+        $this->SetValue('ValveState', (int) $state);
     }
 }
